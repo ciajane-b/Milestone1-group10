@@ -327,3 +327,62 @@ public void cancelReservation(String unitId) {
         }
         return logs;
     }
+
+public List<AuditLog> getAuditLogsByUser(String username) {
+        List<AuditLog> logs = new ArrayList<>();
+        String query =
+                "SELECT id, user, action, time FROM audit_logs " +
+                        "WHERE user = ? ORDER BY time DESC";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, username);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                logs.add(new AuditLog(
+                        rs.getInt("id"), rs.getString("user"),
+                        rs.getString("action"), rs.getString("time")));
+            }
+        } catch (SQLException e) {
+            System.out.println("Get audit logs by user error: " + e.getMessage());
+        }
+        return logs;
+    }
+
+    public List<ReservationSummary> getReservationSummary() {
+        List<ReservationSummary> summaries = new ArrayList<>();
+        String query =
+                "SELECT unit_id, occupant_name, occupant_rank, room_number, status " +
+                        "FROM reservations WHERE status = 'ACTIVE'";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            while (rs.next()) {
+                summaries.add(new ReservationSummary(
+                        rs.getString("unit_id"), rs.getString("occupant_name"),
+                        rs.getString("occupant_rank"), rs.getString("room_number"),
+                        rs.getString("status")));
+            }
+        } catch (SQLException e) {
+            System.out.println("Get reservation summary error: " + e.getMessage());
+        }
+        return summaries;
+    }
+}
+
+class AuditLog {
+    public int id;
+    public String user, action, time;
+
+    public AuditLog(int id, String user, String action, String time) {
+        this.id = id; this.user = user;
+        this.action = action; this.time = time;
+    }
+}
+
+class ReservationSummary {
+    public String unitId, occupantName, rank, roomNumber, status;
+
+    public ReservationSummary(String unitId, String occupantName,
+                              String rank, String roomNumber, String status) {
+        this.unitId = unitId; this.occupantName = occupantName;
+        this.rank = rank; this.roomNumber = roomNumber; this.status = status;
+    }
+}
