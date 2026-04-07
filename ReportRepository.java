@@ -112,3 +112,65 @@ private void seedData() {
             System.out.println("Seed data error: " + e.getMessage());
         }
     }
+
+public UserSession authenticate(String username, String password) {
+        String query = "SELECT rank FROM users WHERE username = ? COLLATE NOCASE AND password = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, username);
+            pstmt.setString(2, hashPassword(password));
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) {
+                return new UserSession(username, rs.getString("rank"));
+            }
+        } catch (SQLException e) {
+            System.out.println("Authentication error: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public void saveLog(String user, String action) {
+        String query = "INSERT INTO audit_logs (user, action, time) VALUES (?, ?, datetime('now'))";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, user);
+            pstmt.setString(2, action);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Log save error: " + e.getMessage());
+        }
+    }
+
+    public void saveReservation(String unitId, ServiceMember member, String roomNumber) {
+        String query =
+                "INSERT INTO reservations (unit_id, occupant_name, occupant_id, occupant_rank, " +
+                        "room_number, status, weapons_clearance, check_in_date) " +
+                        "VALUES (?, ?, ?, ?, ?, 'ACTIVE', 'PENDING', date('now'))";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            pstmt.setString(2, member.getName());
+            pstmt.setString(3, member.getId());
+            pstmt.setString(4, member.getRank());
+            pstmt.setString(5, roomNumber);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Save reservation error: " + e.getMessage());
+        }
+    }
+
+    public void modifyReservation(String unitId, String newRoom, String occupantName) {
+        String query =
+                "UPDATE reservations SET room_number = ?, occupant_name = ? " +
+                        "WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, newRoom);
+            pstmt.setString(2, occupantName);
+            pstmt.setString(3, unitId);
+            int rows = pstmt.executeUpdate();
+            if (rows == 0) {
+                System.out.println("|  |    No active reservation found for Unit ID: " + unitId);
+            } else {
+                updateRoomStatus(newRoom, "Occupied");
+            }
+        } catch (SQLException e) {
+            System.out.println("Modify reservation error: " + e.getMessage());
+        }
+    }
