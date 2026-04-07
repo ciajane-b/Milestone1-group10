@@ -174,3 +174,156 @@ public UserSession authenticate(String username, String password) {
             System.out.println("Modify reservation error: " + e.getMessage());
         }
     }
+
+public void cancelReservation(String unitId) {
+        String roomNumber = getRoomNumberForUnit(unitId);
+
+        String query =
+                "UPDATE reservations SET status = 'CANCELLED' " +
+                        "WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            int rows = pstmt.executeUpdate();
+            if (rows == 0) {
+                System.out.println("|  |    No active reservation found for Unit ID: " + unitId);
+            } else if (roomNumber != null) {
+                updateRoomStatus(roomNumber, "Ready");
+            }
+        } catch (SQLException e) {
+            System.out.println("Cancel reservation error: " + e.getMessage());
+        }
+    }
+
+    public String getRoomNumberForUnit(String unitId) {
+        String query = "SELECT room_number FROM reservations WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getString("room_number");
+        } catch (SQLException e) {
+            System.out.println("Get room error: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public String getOccupantNameForUnit(String unitId) {
+        String query = "SELECT occupant_name FROM reservations WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getString("occupant_name");
+        } catch (SQLException e) {
+            System.out.println("Get occupant error: " + e.getMessage());
+        }
+        return null;
+    }
+
+    public void updateWeaponsClearance(String unitId, String status) {
+        String query =
+                "UPDATE reservations SET weapons_clearance = ? " +
+                        "WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, status);
+            pstmt.setString(2, unitId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Update weapons clearance error: " + e.getMessage());
+        }
+    }
+
+    public void releaseQuarters(String unitId) {
+        String query =
+                "UPDATE reservations SET status = 'CHECKED_OUT' " +
+                        "WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Release quarters error: " + e.getMessage());
+        }
+    }
+
+    public void searchReservationByUnitId(String unitId) {
+        String query =
+                "SELECT occupant_name, occupant_rank, room_number, status " +
+                        "FROM reservations WHERE unit_id = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            ResultSet rs = pstmt.executeQuery();
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.println("|  |    Found: " + rs.getString("occupant_name") +
+                        " (" + rs.getString("occupant_rank") + ") in Room " + rs.getString("room_number"));
+                System.out.println("|  |    Status: " + rs.getString("status"));
+            }
+            if (!found) {
+                System.out.println("|  |    No reservation found for Unit ID: " + unitId);
+            }
+        } catch (SQLException e) {
+            System.out.println("Search error: " + e.getMessage());
+        }
+    }
+
+    public void updateRoomStatus(String roomNumber, String status) {
+        String query = "UPDATE rooms SET status = ? WHERE room_number = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, status);
+            pstmt.setString(2, roomNumber);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Update room status error: " + e.getMessage());
+        }
+    }
+
+    public void printAllRooms() {
+        String query = "SELECT room_number, status FROM rooms ORDER BY room_number";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            boolean found = false;
+            while (rs.next()) {
+                found = true;
+                System.out.println("|  |    Room " + rs.getString("room_number") +
+                        ": " + rs.getString("status"));
+            }
+            if (!found) System.out.println("|  |    No rooms found.");
+        } catch (SQLException e) {
+            System.out.println("Get rooms error: " + e.getMessage());
+        }
+    }
+
+    public List<AuditLog> getAllAuditLogs() {
+        List<AuditLog> logs = new ArrayList<>();
+        String query = "SELECT id, user, action, time FROM audit_logs ORDER BY time DESC";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(query)) {
+            while (rs.next()) {
+                logs.add(new AuditLog(
+                        rs.getInt("id"), rs.getString("user"),
+                        rs.getString("action"), rs.getString("time")));
+            }
+        } catch (SQLException e) {
+            System.out.println("Get audit logs error: " + e.getMessage());
+        }
+        return logs;
+    }
+
+    public List<AuditLog> getAuditLogsByDateRange(String startDate, String endDate) {
+        List<AuditLog> logs = new ArrayList<>();
+        String query =
+                "SELECT id, user, action, time FROM audit_logs " +
+                        "WHERE date(time) BETWEEN ? AND ? ORDER BY time DESC";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, startDate);
+            pstmt.setString(2, endDate);
+            ResultSet rs = pstmt.executeQuery();
+            while (rs.next()) {
+                logs.add(new AuditLog(
+                        rs.getInt("id"), rs.getString("user"),
+                        rs.getString("action"), rs.getString("time")));
+            }
+        } catch (SQLException e) {
+            System.out.println("Get audit logs by date error: " + e.getMessage());
+        }
+        return logs;
+    }
