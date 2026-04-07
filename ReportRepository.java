@@ -80,3 +80,35 @@ public class ReportRepository {
             System.out.println("Table creation error: " + e.getMessage());
         }
     }
+
+private void seedData() {
+        try {
+            PreparedStatement checkStmt = connection.prepareStatement("SELECT COUNT(*) FROM users");
+            ResultSet rs = checkStmt.executeQuery();
+            int count = rs.getInt(1);
+
+            if (count == 0) {
+                String insertUser = "INSERT INTO users (username, password, rank) VALUES (?, ?, ?)";
+                PreparedStatement pstmt = connection.prepareStatement(insertUser);
+
+                pstmt.setString(1, "Ciara");
+                pstmt.setString(2, hashPassword("admin123"));
+                pstmt.setString(3, "CPT");
+                pstmt.executeUpdate();
+
+                pstmt.setString(1, "Aldrian");
+                pstmt.setString(2, hashPassword("user123"));
+                pstmt.setString(3, "PVT");
+                pstmt.executeUpdate();
+
+                pstmt.setString(1, "SgtMiller");
+                pstmt.setString(2, hashPassword("nco123"));
+                pstmt.setString(3, "SGT");
+                pstmt.executeUpdate();
+
+                System.out.println("Seed data inserted successfully.");
+            }
+        } catch (SQLException e) {
+            System.out.println("Seed data error: " + e.getMessage());
+        }
+    }
