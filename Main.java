@@ -10,6 +10,7 @@ public class Main {
         OfficerService off = new OfficerService(repo);
         AuditReportService auditReport = new AuditReportService(repo);
         InputValidator validator = new InputValidator();
+        PaymentService paymentService = new PaymentService(repo, aar);   // NEW (M4)
 
         boolean run = true;
         while (run) {
@@ -56,6 +57,8 @@ public class Main {
                 System.out.println("|  11.  Generate Reservation Summary                                   |");
                 System.out.println("|  12.  Check-In (with Rank Assignment)                                |");
                 System.out.println("|  13.  Record Weapons Clearance                                       |");
+                System.out.println("|  14.  Pay for Reservation                                            |");  // NEW (M4)
+                System.out.println("|  15.  Generate Income Statement (Officers only)                      |");  // NEW (M4)
                 System.out.println("|   0.  Logout                                                         |");
                 System.out.println("+----------------------------------------------------------------------+");
                 System.out.print("  Choice: ");
@@ -158,6 +161,28 @@ public class Main {
                         String wcStatus = scanner.nextLine().trim().toUpperCase();
                         fd.recordWeaponsClearance(session, wcUnit, wcStatus);
                         break;
+
+                    // ── NEW: M4 Finance Management ─────────────────────── //
+                    case 14:
+                        System.out.print("  Unit ID: ");
+                        String payUnit = scanner.nextLine().trim();
+                        System.out.print("  Number of nights: ");
+                        int nights = validator.getValidInt(scanner);
+                        System.out.print("  Available balance (PHP): ");
+                        double balance;
+                        try {
+                            balance = Double.parseDouble(scanner.nextLine().trim());
+                        } catch (NumberFormatException e) {
+                            System.out.println("|  |    Invalid balance. Please enter a numeric value.");
+                            break;
+                        }
+                        paymentService.processReservationPayment(session, payUnit, nights, balance);
+                        break;
+
+                    case 15:
+                        paymentService.generateIncomeStatement(session);
+                        break;
+                    // ─────────────────────────────────────────────────────── //
 
                     case 0:
                         System.out.println("\n  Logging out " + session.getUsername() + "...");
