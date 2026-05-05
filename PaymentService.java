@@ -1,0 +1,160 @@
+/**
+ * PaymentService — bridges the PaymentFramework with the reservation system.
+ *
+ * Responsibilities:
+ *  1. Charge a service member for their reservation (processReservationPayment).
+ *  2. Display the income statement for officers (generateIncomeStatement).
+ *
+ * Room nightly rates (PHP):
+ *   Barracks Bunk 4  →   500
+ *   Barracks Bunk 2  →   750
+ *   Room 100         → 1,000
+ *   Room 200         → 1,500
+ *   Room 300         → 2,000
+ *   (default)        →   800
+ */
+
+public class PaymentService {
+
+    private ReportRepository repo;
+    private AfterActionReview aar;
+
+    // Nightly base rates per room type (PHP)
+    private static final double RATE_BARRACKS_BUNK4 = 500.00;
+    private static final double RATE_BARRACKS_BUNK2 = 750.00;
+    private static final double RATE_ROOM_100       = 1_000.00;
+    private static final double RATE_ROOM_200       = 1_500.00;
+    private static final double RATE_ROOM_300       = 2_000.00;
+    private static final double RATE_DEFAULT        =   800.00;
+
+    public PaymentService(ReportRepository repo, AfterActionReview aar) {
+        this.repo = repo;
+        this.aar  = aar;
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Public API                                                          //
+    // ------------------------------------------------------------------ //
+
+    /**
+     * Processes payment for an active reservation identified by unitId.
+     *
+     * @param session   the currently logged-in user (for audit logging)
+     * @param unitId    the unit whose reservation is being charged
+     * @param nights    number of nights to charge
+     * @param balance   the service member's available balance (PHP)
+     */
+  
+    public void processReservationPayment(UserSession session,
+                                          String unitId,
+                                          int    nights,
+                                          double balance) {
+
+        // ── Look up reservation details ──────────────────────────────── //
+        String occupant  = repo.getOccupantNameForUnit(unitId);
+        String room      = repo.getRoomNumberForUnit(unitId);
+        String rank      = repo.getOccupantRankForUnit(unitId);
+
+        if (occupant == null || room == null) {
+            System.out.println("|  |    ERROR: No active reservation found for Unit ID: " + unitId);
+            return;
+        }
+
+        double nightly = getNightlyRate(room);
+        double charge  = nightly * nights;
+
+        // ── Print receipt header ─────────────────────────────────────── //
+        System.out.println("|  |");
+        System.out.println("|  |    ========== RESERVATION PAYMENT ==========");
+        System.out.printf ("|  |    Occupant   : %s (%s)%n", occupant, rank);
+        System.out.printf ("|  |    Unit ID    : %s%n", unitId);
+        System.out.printf ("|  |    Room       : %s%n", room);
+        System.out.printf ("|  |    Nights     : %d%n", nights);
+        System.out.printf ("|  |    Base rate  : PHP %.2f / night%n", nightly);
+        System.out.printf ("|  |    Subtotal   : PHP %.2f%n", charge);
+        System.out.println("|  |");
+
+        // ── Run the PaymentFramework template method ─────────────────── //
+        ReservationPayment payment = new ReservationPayment(balance, charge, rank);
+        payment.processInvoice();           // validate → VAT → discount → finalize
+
+        // ── Persist transaction regardless of outcome ────────────────── //
+        //    (framework already prints success/failure; we record what
+        //     actually happened by checking if balance dropped)
+        double finalBalance = payment.getBalance();
+        boolean success     = (finalBalance < balance);   // balance changed = paid
+
+        if (success) {
+            // Compute what was actually deducted
+            double paid = balance - finalBalance;
+            repo.savePayment(unitId, occupant, rank, room, nights, charge, paid);
+            aar.log(session, "Payment processed for " + occupant +
+                    " (Unit: " + unitId + ") PHP " + String.format("%.2f", paid));
+        }
+
+        System.out.println("|  |    ==========================================");
+        System.out.println("|  |");
+    }
+
+    /**
+     * Generates an income statement. Officer rank (CPT / LT) required.
+     *
+     * @param session the currently logged-in user
+     */
+  
+    public void generateIncomeStatement(UserSession session) {
+
+        if (!session.getRank().equals("CPT") && !session.getRank().equals("LT")) {
+            System.out.println("|  |    ACCESS DENIED: Officer rank required to view income statement.");
+            return;
+        }
+
+        java.util.List<PaymentRecord> records = repo.getAllPayments();
+
+        System.out.println("|  |");
+        System.out.println("|  |    ========== INCOME STATEMENT ==========");
+        System.out.println("|  |    Generated by: " + session.getRank() + " " + session.getUsername());
+        System.out.println("|  |    Date: " + java.time.LocalDate.now());
+        System.out.println("|  |");
+
+        if (records.isEmpty()) {
+            System.out.println("|  |    No payment records found.");
+        } else {
+
+            System.out.println("|  |    ID | Occupant         | Rank | Room             | Nts | Base (PHP)  | Paid (PHP)  | Date");
+            System.out.println("|  |    ---|------------------|------|------------------|-----|-------------|-------------|----------");
+
+            double totalRevenue = 0;
+            for (PaymentRecord r : records) {
+                System.out.printf("|  |    %-3d | %-16s | %-4s | %-16s | %-3d | %11.2f | %11.2f | %s%n",
+                        r.id, r.occupantName, r.rank, r.roomNumber,
+                        r.nights, r.baseAmount, r.paidAmount, r.paymentDate);
+                totalRevenue += r.paidAmount;
+            }
+
+            System.out.println("|  |");
+            System.out.printf ("|  |    TOTAL REVENUE: PHP %.2f%n", totalRevenue);
+        }
+
+        System.out.println("|  |");
+        System.out.println("|  |    ========== END OF INCOME STATEMENT ==========");
+        System.out.println("|  |");
+
+        aar.log(session, "Generated income statement");
+    }
+
+    // ------------------------------------------------------------------ //
+    //  Helpers                                                             //
+    // ------------------------------------------------------------------ //
+
+    private double getNightlyRate(String room) {
+        switch (room) {
+            case "Barracks Bunk 4": return RATE_BARRACKS_BUNK4;
+            case "Barracks Bunk 2": return RATE_BARRACKS_BUNK2;
+            case "100":             return RATE_ROOM_100;
+            case "200":             return RATE_ROOM_200;
+            case "300":             return RATE_ROOM_300;
+            default:                return RATE_DEFAULT;
+        }
+    }
+}
