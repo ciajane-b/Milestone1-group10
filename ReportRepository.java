@@ -64,11 +64,25 @@ public class ReportRepository {
                         "room_number TEXT PRIMARY KEY, " +
                         "status TEXT)";
 
+        // ── NEW: payments table (M4 Finance Management) ──────────────── //
+        String createPaymentsTable =
+                "CREATE TABLE IF NOT EXISTS payments (" +
+                        "id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+                        "unit_id TEXT, " +
+                        "occupant_name TEXT, " +
+                        "rank TEXT, " +
+                        "room_number TEXT, " +
+                        "nights INTEGER, " +
+                        "base_amount REAL, " +
+                        "paid_amount REAL, " +
+                        "payment_date TEXT)";
+
         try (Statement stmt = connection.createStatement()) {
             stmt.execute(createUsersTable);
             stmt.execute(createAuditLogsTable);
             stmt.execute(createReservationsTable);
             stmt.execute(createRoomsTable);
+            stmt.execute(createPaymentsTable);             // NEW
 
             stmt.execute("INSERT OR IGNORE INTO rooms VALUES ('101', 'Ready')");
             stmt.execute("INSERT OR IGNORE INTO rooms VALUES ('102', 'Ready')");
@@ -81,7 +95,7 @@ public class ReportRepository {
         }
     }
 
-private void seedData() {
+    private void seedData() {
         try {
             PreparedStatement checkStmt = connection.prepareStatement("SELECT COUNT(*) FROM users");
             ResultSet rs = checkStmt.executeQuery();
@@ -113,7 +127,7 @@ private void seedData() {
         }
     }
 
-public UserSession authenticate(String username, String password) {
+    public UserSession authenticate(String username, String password) {
         String query = "SELECT rank FROM users WHERE username = ? COLLATE NOCASE AND password = ?";
         try (PreparedStatement pstmt = connection.prepareStatement(query)) {
             pstmt.setString(1, username);
@@ -175,7 +189,7 @@ public UserSession authenticate(String username, String password) {
         }
     }
 
-public void cancelReservation(String unitId) {
+    public void cancelReservation(String unitId) {
         String roomNumber = getRoomNumberForUnit(unitId);
 
         String query =
@@ -216,6 +230,69 @@ public void cancelReservation(String unitId) {
             System.out.println("Get occupant error: " + e.getMessage());
         }
         return null;
+    }
+
+    // ── NEW: returns the occupant's rank for a given active unit ──────── //
+    public String getOccupantRankForUnit(String unitId) {
+        String query = "SELECT occupant_rank FROM reservations WHERE unit_id = ? AND status = 'ACTIVE'";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            ResultSet rs = pstmt.executeQuery();
+            if (rs.next()) return rs.getString("occupant_rank");
+        } catch (SQLException e) {
+            System.out.println("Get occupant rank error: " + e.getMessage());
+        }
+        return "PVT";   // safe default
+    }
+
+    // ── NEW: persists a completed payment record ─────────────────────── //
+    public void savePayment(String unitId, String occupantName, String rank,
+                            String roomNumber, int nights,
+                            double baseAmount, double paidAmount) {
+        String query =
+                "INSERT INTO payments " +
+                        "(unit_id, occupant_name, rank, room_number, nights, " +
+                        " base_amount, paid_amount, payment_date) " +
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, date('now'))";
+        try (PreparedStatement pstmt = connection.prepareStatement(query)) {
+            pstmt.setString(1, unitId);
+            pstmt.setString(2, occupantName);
+            pstmt.setString(3, rank);
+            pstmt.setString(4, roomNumber);
+            pstmt.setInt   (5, nights);
+            pstmt.setDouble(6, baseAmount);
+            pstmt.setDouble(7, paidAmount);
+            pstmt.executeUpdate();
+        } catch (SQLException e) {
+            System.out.println("Save payment error: " + e.getMessage());
+        }
+    }
+
+    // ── NEW: retrieves all payment records for income statement ────────── //
+    public List<PaymentRecord> getAllPayments() {
+        List<PaymentRecord> records = new ArrayList<>();
+        String query =
+                "SELECT id, unit_id, occupant_name, rank, room_number, " +
+                        "nights, base_amount, paid_amount, payment_date " +
+                        "FROM payments ORDER BY payment_date DESC, id DESC";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs   = stmt.executeQuery(query)) {
+            while (rs.next()) {
+                records.add(new PaymentRecord(
+                        rs.getInt   ("id"),
+                        rs.getString("unit_id"),
+                        rs.getString("occupant_name"),
+                        rs.getString("rank"),
+                        rs.getString("room_number"),
+                        rs.getInt   ("nights"),
+                        rs.getDouble("base_amount"),
+                        rs.getDouble("paid_amount"),
+                        rs.getString("payment_date")));
+            }
+        } catch (SQLException e) {
+            System.out.println("Get payments error: " + e.getMessage());
+        }
+        return records;
     }
 
     public void updateWeaponsClearance(String unitId, String status) {
@@ -328,7 +405,7 @@ public void cancelReservation(String unitId) {
         return logs;
     }
 
-public List<AuditLog> getAuditLogsByUser(String username) {
+    public List<AuditLog> getAuditLogsByUser(String username) {
         List<AuditLog> logs = new ArrayList<>();
         String query =
                 "SELECT id, user, action, time FROM audit_logs " +
@@ -384,5 +461,27 @@ class ReservationSummary {
                               String rank, String roomNumber, String status) {
         this.unitId = unitId; this.occupantName = occupantName;
         this.rank = rank; this.roomNumber = roomNumber; this.status = status;
+    }
+}
+
+// ── NEW: data holder for a payment row ────────────────────────────────── //
+class PaymentRecord {
+    public int    id;
+    public String unitId, occupantName, rank, roomNumber, paymentDate;
+    public int    nights;
+    public double baseAmount, paidAmount;
+
+    public PaymentRecord(int id, String unitId, String occupantName, String rank,
+                         String roomNumber, int nights,
+                         double baseAmount, double paidAmount, String paymentDate) {
+        this.id          = id;
+        this.unitId      = unitId;
+        this.occupantName = occupantName;
+        this.rank        = rank;
+        this.roomNumber  = roomNumber;
+        this.nights      = nights;
+        this.baseAmount  = baseAmount;
+        this.paidAmount  = paidAmount;
+        this.paymentDate = paymentDate;
     }
 }
